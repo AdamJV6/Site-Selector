@@ -4,6 +4,7 @@ Geocoding + Census geography lookup using the free Census Bureau Geocoder.
 No API key required.
 """
 
+import network_fix  # noqa: F401 — must import before any requests calls; see network_fix.py
 import requests
 
 GEOCODER_BASE = "https://geocoding.geo.census.gov/geocoder"

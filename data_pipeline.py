@@ -14,6 +14,7 @@ https://api.census.gov/data/key_signup.html
 """
 
 import os
+import network_fix  # noqa: F401 — must import before any requests calls; see network_fix.py
 import requests
 
 CENSUS_ACS_URL = "https://api.census.gov/data/2022/acs/acs5"
@@ -47,7 +48,16 @@ def get_acs_demand_data(geo: dict) -> dict:
 
     resp = requests.get(CENSUS_ACS_URL, params=params, timeout=15)
     resp.raise_for_status()
-    rows = resp.json()  # [[headers...], [values...]]
+    try:
+        rows = resp.json()  # [[headers...], [values...]]
+    except ValueError as e:
+        # Census sometimes returns an empty/non-JSON body on a malformed
+        # query instead of a normal error response. Surface enough detail
+        # to debug rather than a bare JSONDecodeError.
+        raise ValueError(
+            f"Census API returned an unparseable response (status {resp.status_code}, "
+            f"body starts with {resp.text[:120]!r}): {e}"
+        )
     record = dict(zip(rows[0], rows[1]))
 
     population = int(record.get("B01003_001E") or 0)
