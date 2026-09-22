@@ -8,3 +8,5 @@ services:
     envVars:
       - key: CENSUS_API_KEY
         sync: false
+      - key: GEOAPIFY_API_KEY
+        sync: false

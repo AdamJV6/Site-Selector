@@ -2,15 +2,23 @@
 data_pipeline.py
 Pulls the raw signals the Fit Score needs:
   - Demand data from Census ACS 5-Year estimates (block-group level)
-  - Competitor locations from OpenStreetMap (Overpass API)
-  - Complementary land-use ("generator") locations from OpenStreetMap
+  - Competitor locations from the Geoapify Places API
+  - Complementary land-use ("generator") locations from the Geoapify Places API
 
 v1 scope: Indiana only, fast-casual restaurant tenant profile,
 fixed 1-mile competitor trade area / 0.5-mile complementary-use radius.
 
-No paid API keys required. A free Census API key is optional (raises the
-rate limit) — set it as the CENSUS_API_KEY env var if you have one:
-https://api.census.gov/data/key_signup.html
+Requires two free API keys, set as env vars:
+  CENSUS_API_KEY   - https://api.census.gov/data/key_signup.html
+  GEOAPIFY_API_KEY - https://www.geoapify.com/ (free tier, no credit card)
+
+Note: v1 originally used OpenStreetMap's Overpass API for competitor/
+generator lookups (free, keyless). In production testing on Render, the
+free community-run Overpass mirrors intermittently refused or timed out
+connections from Render's IP range (a known anti-abuse pattern on
+volunteer-run infrastructure toward cloud/datacenter IPs). Geoapify is a
+commercial API built for exactly this server-to-server use case and
+doesn't exhibit that behavior, so v1 uses it instead.
 """
 
 import os
@@ -18,22 +26,11 @@ import network_fix  # noqa: F401 — must import before any requests calls; see 
 import requests
 
 CENSUS_ACS_URL = "https://api.census.gov/data/2022/acs/acs5"
+GEOAPIFY_PLACES_URL = "https://api.geoapify.com/v2/places"
 
-# Many community-run APIs (Overpass mirrors especially) silently drop or
-# rate-limit requests carrying the default python-requests User-Agent,
-# since it's heavily associated with scraper/bot traffic. Identifying the
-# app explicitly avoids that.
+# Identify the app explicitly; some APIs deprioritize or drop requests
+# carrying the default python-requests User-Agent.
 HEADERS = {"User-Agent": "SiteSelectorMVP/1.0 (Purdue class project; contact: set-your-email@example.com)"}
-
-# Multiple public Overpass mirrors, tried in order. The main overpass-api.de
-# instance sometimes refuses connections from cloud/datacenter IP ranges
-# (including Render's) as an anti-abuse measure; falling back to another
-# mirror works around that. See https://wiki.openstreetmap.org/wiki/Overpass_API
-OVERPASS_URLS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.openstreetmap.ru/api/interpreter",
-]
 
 # Indiana statewide benchmark (2022 ACS 5-year) used to normalize local
 # block-group median income. Hardcoded since v1 scope is IN-only; swap
@@ -86,60 +83,40 @@ def get_acs_demand_data(geo: dict) -> dict:
     }
 
 
-def _overpass_search(lat: float, lon: float, radius_m: int, tag_filters: list) -> list:
+def _geoapify_search(lat: float, lon: float, radius_m: int, categories: list) -> list:
     """
-    Query Overpass for nodes/ways matching any of the given tag filters
-    within radius_m meters of (lat, lon). Each filter is either "key=value"
-    (exact match) or just "key" (any value).
-
-    Tries each mirror in OVERPASS_URLS in turn, since the main instance
-    sometimes refuses connections from cloud-hosted IPs.
+    Query the Geoapify Places API for points matching any of the given
+    category keys within radius_m meters of (lat, lon). Category keys are
+    Geoapify's hierarchical taxonomy, e.g. "catering.restaurant",
+    "commercial.supermarket" — see https://apidocs.geoapify.com/docs/places/
 
     Returns a list of dicts: [{"lat": .., "lon": .., "name": ..}, ...]
-    Ways are represented by their center point.
     """
-    clauses = []
-    for f in tag_filters:
-        if "=" in f:
-            key, value = f.split("=", 1)
-            cond = f'["{key}"="{value}"]'
-        else:
-            cond = f'["{f}"]'
-        clauses.append(f'node{cond}(around:{radius_m},{lat},{lon});')
-        clauses.append(f'way{cond}(around:{radius_m},{lat},{lon});')
+    api_key = os.environ.get("GEOAPIFY_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "GEOAPIFY_API_KEY is not set. Get a free key at geoapify.com and "
+            "add it as an environment variable."
+        )
 
-    query = "[out:json][timeout:25];(" + "".join(clauses) + ");out center tags;"
-
-    errors = []
-    elements = None
-    for url in OVERPASS_URLS:
-        try:
-            # (connect_timeout, read_timeout): fail fast if a mirror is
-            # silently dropping the connection rather than waiting the
-            # full read timeout on every mirror in turn.
-            resp = requests.post(url, data={"data": query}, headers=HEADERS, timeout=(6, 25))
-            resp.raise_for_status()
-            elements = resp.json().get("elements", [])
-            break
-        except Exception as e:
-            errors.append(f"{url} -> {e}")
-            continue
-
-    if elements is None:
-        raise RuntimeError("All Overpass mirrors failed:\n" + "\n".join(errors))
+    params = {
+        "categories": ",".join(categories),
+        "filter": f"circle:{lon},{lat},{radius_m}",
+        "limit": 100,
+        "apiKey": api_key,
+    }
+    resp = requests.get(GEOAPIFY_PLACES_URL, params=params, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
 
     points = []
-    for el in elements:
-        if el["type"] == "node":
-            p_lat, p_lon = el.get("lat"), el.get("lon")
-        else:
-            center = el.get("center")
-            if not center:
-                continue
-            p_lat, p_lon = center["lat"], center["lon"]
-        if p_lat is None or p_lon is None:
+    for feature in data.get("features", []):
+        props = feature.get("properties", {})
+        coords = feature.get("geometry", {}).get("coordinates")
+        if not coords or len(coords) < 2:
             continue
-        name = el.get("tags", {}).get("name", "Unnamed")
+        p_lon, p_lat = coords[0], coords[1]
+        name = props.get("name") or props.get("address_line1") or "Unnamed"
         points.append({"lat": p_lat, "lon": p_lon, "name": name})
     return points
 
@@ -147,10 +124,10 @@ def _overpass_search(lat: float, lon: float, radius_m: int, tag_filters: list) -
 def find_competitors(lat: float, lon: float, radius_miles: float = 1.0) -> list:
     """
     Direct fast-casual-restaurant-type competitors within radius_miles.
-    v1 tenant profile only; broaden/parameterize tags per-vertical in v2.
+    v1 tenant profile only; broaden/parameterize categories per-vertical in v2.
     """
     radius_m = int(radius_miles * METERS_PER_MILE)
-    return _overpass_search(lat, lon, radius_m, ["amenity=fast_food", "amenity=restaurant"])
+    return _geoapify_search(lat, lon, radius_m, ["catering.restaurant", "catering.fast_food"])
 
 
 def find_complementary_generators(lat: float, lon: float, radius_miles: float = 0.5) -> list:
@@ -159,14 +136,13 @@ def find_complementary_generators(lat: float, lon: float, radius_miles: float = 
     traffic for a fast-casual restaurant: offices, gyms, schools, retail anchors.
     """
     radius_m = int(radius_miles * METERS_PER_MILE)
-    tags = [
+    categories = [
         "office",
-        "leisure=fitness_centre",
-        "amenity=gym",
-        "amenity=school",
-        "amenity=university",
-        "amenity=hospital",
-        "shop=supermarket",
-        "shop=mall",
+        "commercial.supermarket",
+        "commercial.shopping_mall",
+        "education.school",
+        "education.university",
+        "healthcare.hospital",
+        "activity.sport_club",
     ]
-    return _overpass_search(lat, lon, radius_m, tags)
+    return _geoapify_search(lat, lon, radius_m, categories)

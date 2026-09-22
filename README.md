@@ -9,21 +9,30 @@ weighted composite Fit Score with map view.
 | Charter item | Status |
 |---|---|
 | Address → geocode → trade area | Done (Census Geocoder, free, no key) |
-| Census/ACS demand pull | Done (population + median household income, block-group level) |
-| Competitor count (1 mi) | Done — **via OpenStreetMap Overpass, not Google Places** (see below) |
-| Complementary land use (0.5 mi) | Done — via OpenStreetMap Overpass |
+| Census/ACS demand pull | Done (population + median household income, block-group level) — **requires a free Census API key**, see below |
+| Competitor count (1 mi) | Done — **via Geoapify Places API, not Google Places or Overpass** (see below) |
+| Complementary land use (0.5 mi) | Done — via Geoapify Places API |
 | Manual AADT entry | Done (number input in sidebar, no DOT automation yet) |
 | Composite score + sub-score breakdown + tier label | Done |
 | Map: site, competitors, complementary uses | Done (Folium) |
 | Indiana-only enforcement | Done (rejects non-IN block groups) |
 
 **Deviation from the charter, on purpose:** competitor and complementary-use
-lookups use OpenStreetMap's Overpass API instead of Google Places. Overpass
-is free and keyless, so this app can go live on Render with zero paid API
-setup. Coverage is sparser than Google Places in some areas — swapping in
-Google Places (or Placer.ai/SafeGraph/CoStar for the full vision) is a clean
-v2 upgrade since `data_pipeline.py` isolates all of this behind
-`find_competitors()` / `find_complementary_generators()`.
+lookups use the Geoapify Places API instead of Google Places. v1 first tried
+OpenStreetMap's free Overpass API to avoid any billing setup, but in
+production testing on Render, Overpass's volunteer-run public mirrors
+intermittently refused or timed out connections from Render's IP range — a
+known anti-abuse pattern these free community servers apply to cloud/
+datacenter IPs. Geoapify is a commercial API built for exactly this
+server-to-server use case, has a free tier (~3,000 requests/day, no credit
+card), and doesn't exhibit that blocking behavior. Swapping in Google Places
+later (per the original charter) is still a clean v2 upgrade since
+`data_pipeline.py` isolates all of this behind `find_competitors()` /
+`find_complementary_generators()`.
+
+**Two free API keys are required to run this for real** (not just
+recommended): `CENSUS_API_KEY` and `GEOAPIFY_API_KEY`. Both are free with no
+credit card. See "Run locally" / "Deploy to Render" below.
 
 **Calibration constants are unvalidated.** The normalization constants in
 `scoring.py` (e.g., what population count maps to a 100 demand score, how
@@ -54,9 +63,12 @@ pip install -r requirements.txt
 streamlit run app.py
 ```
 
-Opens at http://localhost:8501. A `CENSUS_API_KEY` env var is optional
-(raises the Census API rate limit) — copy `.env.example` to `.env` and fill
-it in, or `export CENSUS_API_KEY=...` before running, if you want one.
+Opens at http://localhost:8501. Two free API keys are required — copy
+`.env.example` to `.env`, fill both in, then `export $(cat .env | xargs)`
+before running (or set them however your shell/OS prefers):
+
+- `GEOAPIFY_API_KEY` — sign up free at geoapify.com, no credit card.
+- `CENSUS_API_KEY` — sign up free at api.census.gov/data/key_signup.html.
 
 ## Deploy to Render
 
@@ -65,7 +77,8 @@ it in, or `export CENSUS_API_KEY=...` before running, if you want one.
 3. If Render doesn't auto-detect `render.yaml`, set manually:
    - **Build command:** `pip install -r requirements.txt`
    - **Start command:** `streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true`
-4. (Optional) Add env var `CENSUS_API_KEY` under the service's Environment tab.
+4. Add both env vars under the service's Environment tab: `CENSUS_API_KEY`
+   and `GEOAPIFY_API_KEY` (both free, see "Run locally" above for signup links).
 5. Deploy. Render gives you a `https://<name>.onrender.com` URL — that's your
    Deliverable 2 link.
 
