@@ -7,11 +7,11 @@ Implements the weighted Fit Score formula from the Project Charter:
 Every sub-score is normalized to a 0-100 scale before weighting.
 
 NOTE ON CALIBRATION: the constants below (DEMAND_POP_BENCHMARK,
-COMPETITOR_PENALTY_PER_SITE, TRAFFIC_AADT_BENCHMARK,
-GENERATOR_POINTS_PER_SITE) are first-pass heuristics, not yet validated
-against known-good sites. That validation is explicitly scoped in the
-charter's team split ("scoring model ... validation against known-good
-sites") — treat these as v1 defaults to be tuned, not final answers.
+COMPETITION_HALF_LIFE, TRAFFIC_AADT_BENCHMARK, GENERATOR_POINTS_PER_SITE)
+are first-pass heuristics, not yet validated against known-good sites.
+That validation is explicitly scoped in the charter's team split
+("scoring model ... validation against known-good sites") — treat these
+as v1 defaults to be tuned, not final answers.
 """
 
 from dataclasses import dataclass, asdict
@@ -27,7 +27,7 @@ WEIGHTS = {
 DEMAND_POP_BENCHMARK = 12000        # population in trade area for a full 100 pop-score
 DEMAND_POP_WEIGHT = 0.6
 DEMAND_INCOME_WEIGHT = 0.4
-COMPETITOR_PENALTY_PER_SITE = 12    # points lost per direct competitor within 1mi
+COMPETITION_HALF_LIFE = 6           # competitors it takes for the competition score to halve (exponential decay, see below)
 TRAFFIC_AADT_BENCHMARK = 30000      # AADT for a full 100 traffic score
 GENERATOR_POINTS_PER_SITE = 10      # points gained per generator within 0.5mi
 
@@ -54,7 +54,17 @@ def demand_subscore(population: int, median_income, state_median_income: float) 
 
 
 def competition_subscore(competitor_count: int) -> float:
-    return round(_clamp(100 - competitor_count * COMPETITOR_PENALTY_PER_SITE), 1)
+    """
+    Exponential decay rather than a linear penalty: the score halves every
+    COMPETITION_HALF_LIFE competitors, so it keeps differentiating between
+    "very saturated" and "extremely saturated" markets instead of clipping
+    to a hard 0 past some fixed competitor count. It gets arbitrarily close
+    to 0 for large competitor counts but (mathematically) never exactly
+    hits it — which is the intended behavior, since a real market can
+    always be a little more or less saturated than another.
+    """
+    score = 100 * (0.5 ** (competitor_count / COMPETITION_HALF_LIFE))
+    return round(_clamp(score), 1)
 
 
 def traffic_subscore(aadt: float) -> float:
