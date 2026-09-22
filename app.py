@@ -47,46 +47,46 @@ with st.sidebar:
     st.radio("Do you already have a location open?", ["Yes", "No, this is my first"])
     run = st.button("Score this site", type="primary", use_container_width=True)
 
-if run:
-    if not address:
-        st.error("Enter an address to score.")
-        st.stop()
 
+def run_pipeline(address: str, aadt: float):
+    """Runs geocoding + data pulls + scoring, returns a dict for rendering,
+    or None (after calling st.error) if the address itself is invalid."""
     with st.spinner("Geocoding address..."):
         try:
             geo = geocode_address(address)
         except ValueError as e:
             st.error(str(e))
-            st.stop()
+            return None
         except Exception as e:
             st.error(f"Geocoding service error: {e}")
-            st.stop()
+            return None
 
     if not is_indiana(geo):
-        st.error(
-            f"'{geo['matched_address']}' is outside Indiana. v1 scope is Indiana-only."
-        )
-        st.stop()
+        st.error(f"'{geo['matched_address']}' is outside Indiana. v1 scope is Indiana-only.")
+        return None
 
     with st.spinner("Pulling Census demand data..."):
         try:
             demand_data = get_acs_demand_data(geo)
+            census_warning = None
         except Exception as e:
-            st.warning(f"Census data pull failed ({e}); demand sub-score will use population=0.")
+            census_warning = f"Census data pull failed ({e}); demand sub-score will use population=0."
             demand_data = {"block_group_population": 0, "median_household_income": None}
 
     with st.spinner("Finding competitors (OpenStreetMap, 1 mi)..."):
         try:
             competitors = find_competitors(geo["lat"], geo["lon"])
+            competitor_warning = None
         except Exception as e:
-            st.warning(f"Competitor lookup failed ({e}); assuming none.")
+            competitor_warning = f"Competitor lookup failed ({e}); assuming none."
             competitors = []
 
     with st.spinner("Finding complementary land uses (OpenStreetMap, 0.5 mi)..."):
         try:
             generators = find_complementary_generators(geo["lat"], geo["lon"])
+            generator_warning = None
         except Exception as e:
-            st.warning(f"Complementary land-use lookup failed ({e}); assuming none.")
+            generator_warning = f"Complementary land-use lookup failed ({e}); assuming none."
             generators = []
 
     result = compute_fit_score(
@@ -97,6 +97,27 @@ if run:
         aadt=aadt,
         generator_count=len(generators),
     )
+
+    return {
+        "geo": geo,
+        "demand_data": demand_data,
+        "competitors": competitors,
+        "generators": generators,
+        "aadt": aadt,
+        "result": result,
+        "warnings": [w for w in (census_warning, competitor_warning, generator_warning) if w],
+    }
+
+
+def render_results(data: dict):
+    geo = data["geo"]
+    demand_data = data["demand_data"]
+    competitors = data["competitors"]
+    generators = data["generators"]
+    result = data["result"]
+
+    for w in data["warnings"]:
+        st.warning(w)
 
     st.success(f"Matched: {geo['matched_address']}")
 
@@ -116,7 +137,7 @@ if run:
                 "median_household_income": demand_data["median_household_income"],
                 "competitors_within_1mi": len(competitors),
                 "generators_within_0.5mi": len(generators),
-                "aadt_entered": aadt,
+                "aadt_entered": data["aadt"],
             })
 
     with col2:
@@ -143,6 +164,24 @@ if run:
                 [g["lat"], g["lon"]], radius=5, color="#9467bd", fill=True, fill_opacity=0.8,
                 tooltip=f"Generator: {g['name']}",
             ).add_to(m)
-        st_folium(m, width=None, height=520)
+        st_folium(m, width=None, height=520, key="results_map")
+
+
+# Streamlit reruns this whole script on ANY widget interaction, not just the
+# "Score this site" click — so `run` is only True on the exact rerun the
+# button was clicked. Without saving results to session_state, the score
+# card/map would vanish the instant any other widget (or a background
+# reconnect) triggered the next rerun. Persisting to session_state is what
+# keeps results on screen until a new address is actually scored.
+if run:
+    if not address:
+        st.error("Enter an address to score.")
+    else:
+        data = run_pipeline(address, aadt)
+        if data is not None:
+            st.session_state["last_run"] = data
+
+if "last_run" in st.session_state:
+    render_results(st.session_state["last_run"])
 else:
     st.info("Enter an address in the sidebar and click **Score this site** to run the model.")

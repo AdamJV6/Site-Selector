@@ -18,7 +18,16 @@ import network_fix  # noqa: F401 — must import before any requests calls; see 
 import requests
 
 CENSUS_ACS_URL = "https://api.census.gov/data/2022/acs/acs5"
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+
+# Multiple public Overpass mirrors, tried in order. The main overpass-api.de
+# instance sometimes refuses connections from cloud/datacenter IP ranges
+# (including Render's) as an anti-abuse measure; falling back to another
+# mirror works around that. See https://wiki.openstreetmap.org/wiki/Overpass_API
+OVERPASS_URLS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.openstreetmap.ru/api/interpreter",
+]
 
 # Indiana statewide benchmark (2022 ACS 5-year) used to normalize local
 # block-group median income. Hardcoded since v1 scope is IN-only; swap
@@ -77,6 +86,9 @@ def _overpass_search(lat: float, lon: float, radius_m: int, tag_filters: list) -
     within radius_m meters of (lat, lon). Each filter is either "key=value"
     (exact match) or just "key" (any value).
 
+    Tries each mirror in OVERPASS_URLS in turn, since the main instance
+    sometimes refuses connections from cloud-hosted IPs.
+
     Returns a list of dicts: [{"lat": .., "lon": .., "name": ..}, ...]
     Ways are represented by their center point.
     """
@@ -91,9 +103,19 @@ def _overpass_search(lat: float, lon: float, radius_m: int, tag_filters: list) -
         clauses.append(f'way{cond}(around:{radius_m},{lat},{lon});')
 
     query = "[out:json][timeout:25];(" + "".join(clauses) + ");out center tags;"
-    resp = requests.post(OVERPASS_URL, data={"data": query}, timeout=30)
-    resp.raise_for_status()
-    elements = resp.json().get("elements", [])
+
+    last_error = None
+    for url in OVERPASS_URLS:
+        try:
+            resp = requests.post(url, data={"data": query}, timeout=30)
+            resp.raise_for_status()
+            elements = resp.json().get("elements", [])
+            break
+        except Exception as e:
+            last_error = e
+            continue
+    else:
+        raise RuntimeError(f"All Overpass mirrors failed. Last error: {last_error}")
 
     points = []
     for el in elements:
