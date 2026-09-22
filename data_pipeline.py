@@ -19,6 +19,12 @@ import requests
 
 CENSUS_ACS_URL = "https://api.census.gov/data/2022/acs/acs5"
 
+# Many community-run APIs (Overpass mirrors especially) silently drop or
+# rate-limit requests carrying the default python-requests User-Agent,
+# since it's heavily associated with scraper/bot traffic. Identifying the
+# app explicitly avoids that.
+HEADERS = {"User-Agent": "SiteSelectorMVP/1.0 (Purdue class project; contact: set-your-email@example.com)"}
+
 # Multiple public Overpass mirrors, tried in order. The main overpass-api.de
 # instance sometimes refuses connections from cloud/datacenter IP ranges
 # (including Render's) as an anti-abuse measure; falling back to another
@@ -55,7 +61,7 @@ def get_acs_demand_data(geo: dict) -> dict:
     if api_key:
         params["key"] = api_key
 
-    resp = requests.get(CENSUS_ACS_URL, params=params, timeout=15)
+    resp = requests.get(CENSUS_ACS_URL, params=params, headers=HEADERS, timeout=15)
     resp.raise_for_status()
     try:
         rows = resp.json()  # [[headers...], [values...]]
@@ -104,18 +110,23 @@ def _overpass_search(lat: float, lon: float, radius_m: int, tag_filters: list) -
 
     query = "[out:json][timeout:25];(" + "".join(clauses) + ");out center tags;"
 
-    last_error = None
+    errors = []
+    elements = None
     for url in OVERPASS_URLS:
         try:
-            resp = requests.post(url, data={"data": query}, timeout=30)
+            # (connect_timeout, read_timeout): fail fast if a mirror is
+            # silently dropping the connection rather than waiting the
+            # full read timeout on every mirror in turn.
+            resp = requests.post(url, data={"data": query}, headers=HEADERS, timeout=(6, 25))
             resp.raise_for_status()
             elements = resp.json().get("elements", [])
             break
         except Exception as e:
-            last_error = e
+            errors.append(f"{url} -> {e}")
             continue
-    else:
-        raise RuntimeError(f"All Overpass mirrors failed. Last error: {last_error}")
+
+    if elements is None:
+        raise RuntimeError("All Overpass mirrors failed:\n" + "\n".join(errors))
 
     points = []
     for el in elements:

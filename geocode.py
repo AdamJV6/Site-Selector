@@ -10,6 +10,8 @@ import requests
 GEOCODER_BASE = "https://geocoding.geo.census.gov/geocoder"
 INDIANA_STATE_FIPS = "18"
 
+HEADERS = {"User-Agent": "SiteSelectorMVP/1.0 (Purdue class project; contact: set-your-email@example.com)"}
+
 
 def geocode_address(address: str) -> dict:
     """
@@ -39,7 +41,7 @@ def geocode_address(address: str) -> dict:
         "layers": "10",  # Census Block Groups
         "format": "json",
     }
-    resp = requests.get(f"{GEOCODER_BASE}/geographies/onelineaddress", params=params, timeout=15)
+    resp = requests.get(f"{GEOCODER_BASE}/geographies/onelineaddress", params=params, headers=HEADERS, timeout=15)
     resp.raise_for_status()
     data = resp.json()
 
