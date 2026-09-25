@@ -113,6 +113,12 @@ def render_address_results(data: dict):
         st.warning(w)
 
     st.success(f"Matched: {geo['matched_address']}")
+    st.caption(
+        "This is a fit score for the location, not a confirmation that any "
+        "specific space here is currently for lease — v1 has no listings "
+        "data source. Check current availability: "
+        "[LoopNet](https://www.loopnet.com/) · [Crexi](https://www.crexi.com/)"
+    )
 
     col1, col2 = st.columns([1, 1.4])
 
@@ -179,6 +185,12 @@ def render_city_results(city_name: str, candidates: list):
         "(Traffic/Access requires a manual AADT lookup per site; use the "
         "**Score an address** tab for the full 4-factor score once you've "
         "picked a specific address near a top candidate)."
+    )
+    st.caption(
+        "These are sampled grid points, not real listings — v1 has no data "
+        "source for which specific spaces are currently available. Once "
+        "you've picked a promising area, check actual availability: "
+        "[LoopNet](https://www.loopnet.com/) · [Crexi](https://www.crexi.com/)"
     )
 
     center_lat, center_lon = INDIANA_CITIES[city_name]
