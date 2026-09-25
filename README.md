@@ -37,9 +37,11 @@ it:**
   `PRELIM_WEIGHTS` in `scoring.py`. The UI labels this clearly. Once
   you've picked a promising candidate, use the **Score an address** tab
   with a real nearby address and its actual AADT to get the full score.
-- **The grid is deliberately small.** Each candidate point costs ~3 API
-  calls (1 Census + 2 Geoapify). At the default settings (1.5 mi radius,
-  0.5 mi spacing) that's roughly 29 points / ~87 calls per scan — a
+- **The grid is deliberately small.** Each candidate point costs ~4 API
+  calls (1 Census + 2 Geoapify Places + 1 Geoapify reverse-geocode, the
+  last of which turns each grid point into a real nearby address you can
+  paste into LoopNet/Crexi). At the default settings (1.5 mi radius,
+  0.5 mi spacing) that's roughly 29 points / ~115 calls per scan — a
   wider radius or tighter spacing scans more thoroughly but takes longer
   and burns through Geoapify's free-tier daily quota faster. Both are
   adjustable sliders in the UI.
@@ -118,5 +120,12 @@ before running (or set them however your shell/OS prefers):
   minimum needed to demo, not the full business questionnaire from the charter.
 - AADT is manually entered, not pulled from Indiana DOT's open data automatically.
 - Trade area is a fixed-radius circle, not drive-time or road-network based.
+- **No listings/availability data.** The app scores location quality, not
+  whether a specific space is currently for lease. There's no free,
+  legitimate API for this (Google Places' `business_status` field is the
+  closest equivalent and Geoapify doesn't expose it; LoopNet/Crexi have no
+  public API; CoStar is enterprise-only). Both tabs link out to LoopNet and
+  Crexi so the user can manually verify availability once they've found a
+  promising address or area.
 - Free-tier Render web services sleep after inactivity — first load after
   idle can take ~30–60 seconds.

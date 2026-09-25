@@ -10,10 +10,11 @@ IMPORTANT — what this is and isn't:
     parcels, vacant storefronts, or listings. v1 has no listings data
     source (CoStar was deferred). A grid point is only ever a rough area
     worth a closer look, not a confirmed available site.
-  - Every candidate point costs ~3 API calls (Census ACS + 2x Geoapify),
-    so the grid is deliberately small (see DEFAULT_RADIUS_MILES /
-    DEFAULT_SPACING_MILES below) to keep runtime and free-tier API usage
-    reasonable. Widen it if you have quota/time to spare.
+  - Every candidate point costs ~4 API calls (Census ACS + 2x Geoapify
+    Places + 1x Geoapify reverse geocode), so the grid is deliberately
+    small (see DEFAULT_RADIUS_MILES / DEFAULT_SPACING_MILES below) to keep
+    runtime and free-tier API usage reasonable. Widen it if you have
+    quota/time to spare.
 """
 
 import math
@@ -23,6 +24,7 @@ from data_pipeline import (
     get_acs_demand_data,
     find_competitors,
     find_complementary_generators,
+    reverse_geocode,
     INDIANA_MEDIAN_HOUSEHOLD_INCOME,
 )
 from scoring import compute_preliminary_score
@@ -108,6 +110,7 @@ def scan_city(city_name: str,
             demand_data = get_acs_demand_data(geo)
             competitors = find_competitors(lat, lon)
             generators = find_complementary_generators(lat, lon)
+            address = reverse_geocode(lat, lon)
 
             result = compute_preliminary_score(
                 population=demand_data["block_group_population"],
@@ -120,6 +123,7 @@ def scan_city(city_name: str,
             results.append({
                 "lat": lat,
                 "lon": lon,
+                "address": address,
                 "population": demand_data["block_group_population"],
                 "median_income": demand_data["median_household_income"],
                 "competitor_count": len(competitors),

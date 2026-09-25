@@ -27,6 +27,7 @@ import requests
 
 CENSUS_ACS_URL = "https://api.census.gov/data/2022/acs/acs5"
 GEOAPIFY_PLACES_URL = "https://api.geoapify.com/v2/places"
+GEOAPIFY_REVERSE_GEOCODE_URL = "https://api.geoapify.com/v1/geocode/reverse"
 
 # Identify the app explicitly; some APIs deprioritize or drop requests
 # carrying the default python-requests User-Agent.
@@ -146,3 +147,30 @@ def find_complementary_generators(lat: float, lon: float, radius_miles: float = 
         "activity.sport_club",
     ]
     return _geoapify_search(lat, lon, radius_m, categories)
+
+
+def reverse_geocode(lat: float, lon: float) -> str:
+    """
+    Return the nearest real street address to a lat/lon, via Geoapify's
+    Reverse Geocoding API. Used for city-scan candidate points, which are
+    synthetic grid coordinates with no address of their own — this gives
+    the user something concrete to paste into LoopNet/Crexi/a map app.
+
+    Returns a formatted address string, or a rounded-coordinate fallback
+    string if the lookup fails (never raises, since a missing address
+    shouldn't sink an otherwise-successful score).
+    """
+    api_key = os.environ.get("GEOAPIFY_API_KEY")
+    if not api_key:
+        return f"~({lat:.4f}, {lon:.4f})"
+
+    try:
+        params = {"lat": lat, "lon": lon, "format": "json", "apiKey": api_key}
+        resp = requests.get(GEOAPIFY_REVERSE_GEOCODE_URL, params=params, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        if results and results[0].get("formatted"):
+            return results[0]["formatted"]
+    except Exception:
+        pass
+    return f"~({lat:.4f}, {lon:.4f})"

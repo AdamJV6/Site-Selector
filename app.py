@@ -188,9 +188,9 @@ def render_city_results(city_name: str, candidates: list):
     )
     st.caption(
         "These are sampled grid points, not real listings — v1 has no data "
-        "source for which specific spaces are currently available. Once "
-        "you've picked a promising area, check actual availability: "
-        "[LoopNet](https://www.loopnet.com/) · [Crexi](https://www.crexi.com/)"
+        "source for which specific spaces are currently available. Each "
+        "candidate's nearest address is shown above (copy button included) "
+        "to paste into: [LoopNet](https://www.loopnet.com/) · [Crexi](https://www.crexi.com/)"
     )
 
     center_lat, center_lon = INDIANA_CITIES[city_name]
@@ -202,7 +202,7 @@ def render_city_results(city_name: str, candidates: list):
             color=score_color(c["result"].composite),
             fill=True,
             fill_opacity=0.85,
-            tooltip=f"#{rank} — {c['result'].composite}/100 ({c['result'].tier})",
+            tooltip=f"#{rank} — {c['result'].composite}/100 ({c['result'].tier}) — {c['address']}",
         ).add_to(m)
 
     col1, col2 = st.columns([1, 1.4])
@@ -212,7 +212,7 @@ def render_city_results(city_name: str, candidates: list):
             r = c["result"]
             with st.container(border=True):
                 st.markdown(f"**#{rank} — {r.composite}/100 · {r.tier}**")
-                st.caption(f"~({c['lat']:.4f}, {c['lon']:.4f})")
+                st.code(c["address"], language=None)
                 st.progress(r.demand / 100, text=f"Demand: {r.demand}")
                 st.progress(r.competition / 100, text=f"Competition: {r.competition}")
                 st.progress(r.complementary / 100, text=f"Complementary: {r.complementary}")
@@ -263,7 +263,7 @@ with tab_city:
 
     approx_points = int(3.14159 * (radius_miles / spacing_miles) ** 2)
     st.caption(
-        f"~{approx_points} candidate points, ~{approx_points * 3} API calls. "
+        f"~{approx_points} candidate points, ~{approx_points * 4} API calls. "
         "A wider radius or tighter spacing means a slower scan."
     )
 
