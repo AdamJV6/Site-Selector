@@ -12,10 +12,37 @@ weighted composite Fit Score with map view.
 | Census/ACS demand pull | Done (population + median household income, block-group level) — **requires a free Census API key**, see below |
 | Competitor count (1 mi) | Done — **via Geoapify Places API, not Google Places or Overpass** (see below) |
 | Complementary land use (0.5 mi) | Done — via Geoapify Places API |
-| Manual AADT entry | Done (number input in sidebar, no DOT automation yet) |
+| Manual AADT entry | Done (number input, no DOT automation yet) |
 | Composite score + sub-score breakdown + tier label | Done |
 | Map: site, competitors, complementary uses | Done (Folium) |
 | Indiana-only enforcement | Done (rejects non-IN block groups) |
+| **Explore a city (beyond charter's v1 scope)** | Done — see below |
+
+### "Explore a city" mode — beyond the charter's original v1 scope
+
+In addition to scoring one address at a time (the charter's exact v1 spec),
+the app now has a second tab that samples a grid of candidate points around
+a chosen Indiana city's center and ranks them. **Read this before demoing
+it:**
+
+- **Candidate points are a sampled grid, not real listings or parcels.**
+  v1 has no access to actual available listings (CoStar was explicitly
+  deferred in the charter). A high-ranked point means "this general area
+  looks promising," not "this specific building is for lease."
+- **The ranking is 3-factor, not 4-factor.** Traffic/Access is excluded
+  because it's manual-AADT-entry-only in v1 (see charter) and can't
+  reasonably be hand-entered for dozens of grid points at once. The three
+  remaining factors (Demand 0.30, Competition 0.25, Complementary 0.20)
+  are rescaled to sum to 1.0 for this preliminary score — see
+  `PRELIM_WEIGHTS` in `scoring.py`. The UI labels this clearly. Once
+  you've picked a promising candidate, use the **Score an address** tab
+  with a real nearby address and its actual AADT to get the full score.
+- **The grid is deliberately small.** Each candidate point costs ~3 API
+  calls (1 Census + 2 Geoapify). At the default settings (1.5 mi radius,
+  0.5 mi spacing) that's roughly 29 points / ~87 calls per scan — a
+  wider radius or tighter spacing scans more thoroughly but takes longer
+  and burns through Geoapify's free-tier daily quota faster. Both are
+  adjustable sliders in the UI.
 
 **Deviation from the charter, on purpose:** competitor and complementary-use
 lookups use the Geoapify Places API instead of Google Places. v1 first tried
@@ -44,10 +71,12 @@ split.
 ## Project structure
 
 ```
-geocode.py        # address -> lat/lon + Census block-group FIPS
-data_pipeline.py   # ACS demand pull, Overpass competitor/generator search
-scoring.py          # weighted Fit Score formula + sub-score normalization
-app.py               # Streamlit UI (form, score card, map)
+geocode.py          # address/coords -> lat/lon + Census block-group FIPS
+data_pipeline.py     # ACS demand pull, Geoapify competitor/generator search
+scoring.py            # weighted Fit Score formula (full + preliminary)
+city_scan.py           # Indiana city list, grid generation, city-wide scan
+network_fix.py           # works around Render's lack of outbound IPv6
+app.py                    # Streamlit UI — "Score an address" + "Explore a city" tabs
 requirements.txt
 runtime.txt
 render.yaml

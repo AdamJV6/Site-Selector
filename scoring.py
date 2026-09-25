@@ -124,3 +124,57 @@ def compute_fit_score(
         composite=composite,
         tier=tier_label(composite),
     )
+
+
+# --- Preliminary (3-factor) scoring for the city-wide scan ---
+# The city scan generates many candidate points automatically and can't
+# ask a human to look up AADT for each one (Traffic/Access is manual-entry
+# only in v1 — see charter). So the scan ranks on Demand + Competition +
+# Complementary Land Use only, with their charter weights (0.30/0.25/0.20)
+# rescaled to sum to 1.0. This is explicitly a preliminary ranking, not a
+# substitute for the full 4-factor score — the UI must label it as such.
+_PRELIM_WEIGHT_SUM = WEIGHTS["demand"] + WEIGHTS["competition"] + WEIGHTS["complementary"]
+PRELIM_WEIGHTS = {
+    "demand": WEIGHTS["demand"] / _PRELIM_WEIGHT_SUM,
+    "competition": WEIGHTS["competition"] / _PRELIM_WEIGHT_SUM,
+    "complementary": WEIGHTS["complementary"] / _PRELIM_WEIGHT_SUM,
+}
+
+
+@dataclass
+class PreliminaryScoreResult:
+    demand: float
+    competition: float
+    complementary: float
+    composite: float
+    tier: str
+
+    def to_dict(self):
+        return asdict(self)
+
+
+def compute_preliminary_score(
+    population: int,
+    median_income,
+    state_median_income: float,
+    competitor_count: int,
+    generator_count: int,
+) -> PreliminaryScoreResult:
+    demand = demand_subscore(population, median_income, state_median_income)
+    competition = competition_subscore(competitor_count)
+    complementary = complementary_subscore(generator_count)
+
+    composite = round(
+        PRELIM_WEIGHTS["demand"] * demand
+        + PRELIM_WEIGHTS["competition"] * competition
+        + PRELIM_WEIGHTS["complementary"] * complementary,
+        1,
+    )
+
+    return PreliminaryScoreResult(
+        demand=demand,
+        competition=competition,
+        complementary=complementary,
+        composite=composite,
+        tier=tier_label(composite),
+    )

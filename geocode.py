@@ -74,3 +74,46 @@ def geocode_address(address: str) -> dict:
 def is_indiana(geo: dict) -> bool:
     """v1 scope check: reject anything outside Indiana."""
     return geo["state_fips"] == INDIANA_STATE_FIPS
+
+
+def geo_from_coordinates(lat: float, lon: float) -> dict:
+    """
+    Reverse-lookup the Census block-group FIPS codes containing a given
+    lat/lon, without needing a street address. Used by the city-scan grid,
+    where candidate points are generated coordinates, not addresses.
+
+    Returns the same shape as geocode_address(), except "matched_address"
+    is replaced with a rounded-coordinate label since there's no real
+    address associated with a synthetic grid point.
+
+    Raises ValueError if no Census Block Group is found at that location
+    (e.g. the point falls outside the US).
+    """
+    params = {
+        "x": lon,
+        "y": lat,
+        "benchmark": "Public_AR_Current",
+        "vintage": "Current_Current",
+        "layers": "10",  # Census Block Groups
+        "format": "json",
+    }
+    resp = requests.get(f"{GEOCODER_BASE}/geographies/coordinates", params=params, headers=HEADERS, timeout=15)
+    resp.raise_for_status()
+    data = resp.json()
+
+    geographies = data.get("result", {}).get("geographies", {})
+    block_groups = geographies.get("Census Block Groups", [])
+    if not block_groups:
+        raise ValueError(f"No Census Block Group found at ({lat}, {lon}).")
+
+    bg = block_groups[0]
+
+    return {
+        "matched_address": f"~({lat:.4f}, {lon:.4f})",
+        "lat": lat,
+        "lon": lon,
+        "state_fips": bg["STATE"],
+        "county_fips": bg["COUNTY"],
+        "tract_fips": bg["TRACT"],
+        "block_group": bg["BLKGRP"],
+    }
