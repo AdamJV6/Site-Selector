@@ -23,7 +23,7 @@ from data_pipeline import (
     INDIANA_MEDIAN_HOUSEHOLD_INCOME,
 )
 from scoring import compute_fit_score
-from city_scan import scan_city, INDIANA_CITIES, DEFAULT_RADIUS_MILES, DEFAULT_SPACING_MILES
+from city_scan import get_city_grid, score_one_point, INDIANA_CITIES, DEFAULT_RADIUS_MILES, DEFAULT_SPACING_MILES
 
 st.set_page_config(page_title="Site Selector — v1 (Indiana)", layout="wide")
 
@@ -270,14 +270,43 @@ with tab_city:
     run_city = st.button("Scan this city", type="primary", key="scan_button")
 
     if run_city:
-        progress_bar = st.progress(0.0, text="Starting scan...")
+        # Starting a fresh scan: store the plan (grid + progress index) in
+        # session_state rather than a local variable, so the scan survives
+        # a mid-scan rerun (a stray click, a Render websocket reconnect,
+        # etc.) instead of being thrown away — see city_scan.score_one_point's
+        # docstring for why.
+        st.session_state["city_scan_progress"] = {
+            "city_name": city_name,
+            "points": get_city_grid(city_name, radius_miles, spacing_miles),
+            "index": 0,
+            "results": [],
+        }
+        st.session_state.pop("last_city_scan", None)
 
-        def _on_progress(done, total):
-            progress_bar.progress(done / total, text=f"Scored {done}/{total} candidate points...")
+    progress = st.session_state.get("city_scan_progress")
 
-        candidates = scan_city(city_name, radius_miles, spacing_miles, progress_callback=_on_progress)
-        progress_bar.empty()
-        st.session_state["last_city_scan"] = {"city_name": city_name, "candidates": candidates}
+    if progress and progress["index"] < len(progress["points"]):
+        total = len(progress["points"])
+        lat, lon = progress["points"][progress["index"]]
+
+        candidate = score_one_point(lat, lon)
+        if candidate is not None:
+            progress["results"].append(candidate)
+        progress["index"] += 1
+        st.session_state["city_scan_progress"] = progress
+
+        st.progress(
+            progress["index"] / total,
+            text=f"Scored {progress['index']}/{total} candidate points...",
+        )
+        st.rerun()  # immediately continue with the next point
+
+    elif progress:
+        # Just finished this rerun — finalize and hand off to the
+        # persisted "last_city_scan" that render_city_results reads from.
+        results = sorted(progress["results"], key=lambda r: r["result"].composite, reverse=True)
+        st.session_state["last_city_scan"] = {"city_name": progress["city_name"], "candidates": results}
+        del st.session_state["city_scan_progress"]
 
     if "last_city_scan" in st.session_state:
         scan = st.session_state["last_city_scan"]

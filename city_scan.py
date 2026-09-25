@@ -74,70 +74,58 @@ def generate_grid(center_lat: float, center_lon: float,
     return points
 
 
-def scan_city(city_name: str,
-              radius_miles: float = DEFAULT_RADIUS_MILES,
-              spacing_miles: float = DEFAULT_SPACING_MILES,
-              progress_callback=None) -> list:
+def score_one_point(lat: float, lon: float):
     """
-    Score every candidate grid point around a city's center. Points that
-    fail (outside a block group, API error, etc.) are skipped rather than
-    aborting the whole scan.
+    Score a single candidate grid point. Returns a result dict, or None if
+    the point should be skipped (outside Indiana, or any lookup failed —
+    a bad point shouldn't sink the whole scan).
 
-    progress_callback, if given, is called as progress_callback(done, total)
-    after each point — lets the UI show a progress bar.
-
-    Returns a list of dicts sorted by composite score descending:
-      {
-        "lat": .., "lon": ..,
-        "population": .., "median_income": ..,
-        "competitor_count": .., "generator_count": ..,
-        "result": PreliminaryScoreResult,
-      }
+    Split out from what used to be one big scan_city() loop so the UI can
+    call this one point at a time and save each result to st.session_state
+    immediately — see app.py. That makes the scan resumable: if Streamlit
+    aborts and reruns the script mid-scan (a stray click, or a websocket
+    reconnect — both normal and somewhat frequent on Render), only the
+    point that was actively being scored is lost, not the whole scan.
     """
+    try:
+        geo = geo_from_coordinates(lat, lon)
+        if not is_indiana(geo):
+            return None
+
+        demand_data = get_acs_demand_data(geo)
+        competitors = find_competitors(lat, lon)
+        generators = find_complementary_generators(lat, lon)
+        address = reverse_geocode(lat, lon)
+
+        result = compute_preliminary_score(
+            population=demand_data["block_group_population"],
+            median_income=demand_data["median_household_income"],
+            state_median_income=INDIANA_MEDIAN_HOUSEHOLD_INCOME,
+            competitor_count=len(competitors),
+            generator_count=len(generators),
+        )
+
+        return {
+            "lat": lat,
+            "lon": lon,
+            "address": address,
+            "population": demand_data["block_group_population"],
+            "median_income": demand_data["median_household_income"],
+            "competitor_count": len(competitors),
+            "generator_count": len(generators),
+            "result": result,
+        }
+    except Exception:
+        # Skip points that fail (e.g. a rate-limited call, a point just
+        # outside a block group) rather than aborting the whole scan.
+        return None
+
+
+def get_city_grid(city_name: str,
+                   radius_miles: float = DEFAULT_RADIUS_MILES,
+                   spacing_miles: float = DEFAULT_SPACING_MILES) -> list:
+    """Generate the candidate grid for a named Indiana city."""
     if city_name not in INDIANA_CITIES:
         raise ValueError(f"Unknown city: {city_name!r}")
-
     center_lat, center_lon = INDIANA_CITIES[city_name]
-    grid = generate_grid(center_lat, center_lon, radius_miles, spacing_miles)
-
-    results = []
-    for idx, (lat, lon) in enumerate(grid):
-        try:
-            geo = geo_from_coordinates(lat, lon)
-            if not is_indiana(geo):
-                continue
-
-            demand_data = get_acs_demand_data(geo)
-            competitors = find_competitors(lat, lon)
-            generators = find_complementary_generators(lat, lon)
-            address = reverse_geocode(lat, lon)
-
-            result = compute_preliminary_score(
-                population=demand_data["block_group_population"],
-                median_income=demand_data["median_household_income"],
-                state_median_income=INDIANA_MEDIAN_HOUSEHOLD_INCOME,
-                competitor_count=len(competitors),
-                generator_count=len(generators),
-            )
-
-            results.append({
-                "lat": lat,
-                "lon": lon,
-                "address": address,
-                "population": demand_data["block_group_population"],
-                "median_income": demand_data["median_household_income"],
-                "competitor_count": len(competitors),
-                "generator_count": len(generators),
-                "result": result,
-            })
-        except Exception:
-            # Skip points that fail (e.g. a rate-limited call, a point
-            # just outside a block group); the scan still returns whatever
-            # succeeded rather than failing outright.
-            pass
-        finally:
-            if progress_callback:
-                progress_callback(idx + 1, len(grid))
-
-    results.sort(key=lambda r: r["result"].composite, reverse=True)
-    return results
+    return generate_grid(center_lat, center_lon, radius_miles, spacing_miles)
