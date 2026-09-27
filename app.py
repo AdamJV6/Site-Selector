@@ -21,6 +21,7 @@ from data_pipeline import (
     find_competitors,
     find_complementary_generators,
     INDIANA_MEDIAN_HOUSEHOLD_INCOME,
+    TENANT_PROFILES,
 )
 from scoring import compute_fit_score
 from city_scan import get_city_grid, score_one_point, INDIANA_CITIES, DEFAULT_RADIUS_MILES, DEFAULT_SPACING_MILES
@@ -32,9 +33,9 @@ st.caption("MVP — Indiana only · fast-casual restaurant tenant profile")
 
 with st.sidebar:
     st.subheader("About your business (survey — v1 subset)")
-    st.selectbox(
-        "Business type", ["Fast-casual restaurant"], disabled=True,
-        help="v1 supports a single tenant profile; more profiles are a v2 item.",
+    tenant_profile = st.selectbox(
+        "Business type", list(TENANT_PROFILES.keys()),
+        help="v1 supports two tenant profiles; more are a future item.",
     )
     st.radio("Do you already have a location open?", ["Yes", "No, this is my first"])
 
@@ -43,7 +44,7 @@ tab_address, tab_city = st.tabs(["Score an address", "Explore a city"])
 
 # ---------------------------------------------------------------- helpers
 
-def run_address_pipeline(address: str, aadt: float):
+def run_address_pipeline(address: str, aadt: float, tenant_profile: str):
     with st.spinner("Geocoding address..."):
         try:
             geo = geocode_address(address)
@@ -68,7 +69,7 @@ def run_address_pipeline(address: str, aadt: float):
 
     with st.spinner("Finding competitors (1 mi)..."):
         try:
-            competitors = find_competitors(geo["lat"], geo["lon"])
+            competitors = find_competitors(geo["lat"], geo["lon"], tenant_profile=tenant_profile)
             competitor_warning = None
         except Exception as e:
             competitor_warning = f"Competitor lookup failed ({e}); assuming none."
@@ -97,6 +98,7 @@ def run_address_pipeline(address: str, aadt: float):
         "competitors": competitors,
         "generators": generators,
         "aadt": aadt,
+        "tenant_profile": tenant_profile,
         "result": result,
         "warnings": [w for w in (census_warning, competitor_warning, generator_warning) if w],
     }
@@ -132,6 +134,7 @@ def render_address_results(data: dict):
 
         with st.expander("Raw inputs"):
             st.write({
+                "tenant_profile": data["tenant_profile"],
                 "block_group_population": demand_data["block_group_population"],
                 "median_household_income": demand_data["median_household_income"],
                 "competitors_within_1mi": len(competitors),
@@ -174,12 +177,12 @@ def score_color(score: float) -> str:
     return "#d62728"       # red
 
 
-def render_city_results(city_name: str, candidates: list):
+def render_city_results(city_name: str, tenant_profile: str, candidates: list):
     if not candidates:
         st.warning("No candidate points returned usable data. Try a different city or widen the grid.")
         return
 
-    st.success(f"Scored {len(candidates)} candidate locations around {city_name}.")
+    st.success(f"Scored {len(candidates)} candidate locations around {city_name} for a {tenant_profile.lower()}.")
     st.caption(
         "Preliminary ranking — Demand + Competition + Complementary Land Use only "
         "(Traffic/Access requires a manual AADT lookup per site; use the "
@@ -240,7 +243,7 @@ with tab_address:
         if not address:
             st.error("Enter an address to score.")
         else:
-            data = run_address_pipeline(address, aadt)
+            data = run_address_pipeline(address, aadt, tenant_profile)
             if data is not None:
                 st.session_state["last_address_run"] = data
 
@@ -277,6 +280,7 @@ with tab_city:
         # docstring for why.
         st.session_state["city_scan_progress"] = {
             "city_name": city_name,
+            "tenant_profile": tenant_profile,
             "points": get_city_grid(city_name, radius_miles, spacing_miles),
             "index": 0,
             "results": [],
@@ -289,7 +293,7 @@ with tab_city:
         total = len(progress["points"])
         lat, lon = progress["points"][progress["index"]]
 
-        candidate = score_one_point(lat, lon)
+        candidate = score_one_point(lat, lon, tenant_profile=progress["tenant_profile"])
         if candidate is not None:
             progress["results"].append(candidate)
         progress["index"] += 1
@@ -305,11 +309,15 @@ with tab_city:
         # Just finished this rerun — finalize and hand off to the
         # persisted "last_city_scan" that render_city_results reads from.
         results = sorted(progress["results"], key=lambda r: r["result"].composite, reverse=True)
-        st.session_state["last_city_scan"] = {"city_name": progress["city_name"], "candidates": results}
+        st.session_state["last_city_scan"] = {
+            "city_name": progress["city_name"],
+            "tenant_profile": progress["tenant_profile"],
+            "candidates": results,
+        }
         del st.session_state["city_scan_progress"]
 
     if "last_city_scan" in st.session_state:
         scan = st.session_state["last_city_scan"]
-        render_city_results(scan["city_name"], scan["candidates"])
+        render_city_results(scan["city_name"], scan["tenant_profile"], scan["candidates"])
     else:
         st.info("Pick a city above and click **Scan this city** to rank candidate locations.")

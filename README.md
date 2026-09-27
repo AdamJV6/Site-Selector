@@ -16,7 +16,31 @@ weighted composite Fit Score with map view.
 | Composite score + sub-score breakdown + tier label | Done |
 | Map: site, competitors, complementary uses | Done (Folium) |
 | Indiana-only enforcement | Done (rejects non-IN block groups) |
+| **Two tenant profiles (beyond charter's v1 scope)** | Done — see below |
 | **Explore a city (beyond charter's v1 scope)** | Done — see below |
+
+### Two tenant profiles — beyond the charter's original v1 scope
+
+The charter's v1 scope was explicitly one tenant profile (fast-casual
+restaurant). The sidebar's "Business type" selector now also supports
+**Small retail shop**, changing what counts as a direct competitor:
+
+- Fast-casual restaurant: `catering.restaurant` + `catering.fast_food`
+  (Geoapify categories)
+- Small retail shop: Geoapify's broad `commercial` category — roughly 60
+  retail subcategories (clothing, convenience, electronics, florist, food
+  & drink specialists, etc.). v1 doesn't distinguish retail sub-verticals
+  (a bookstore isn't scored differently from a clothing shop), so "any
+  nearby general retail shop" is the honest v1 approximation — the same
+  level of generality the restaurant profile already uses (it isn't
+  narrowed to "fast-casual specifically" either, since `catering.restaurant`
+  covers sit-down dining too).
+
+Complementary land-use ("generator") categories — offices, schools, gyms,
+hospitals, supermarkets, malls — are shared across both profiles on
+purpose, since those drive relevant foot traffic regardless of what's
+being sold. See `TENANT_PROFILES` in `data_pipeline.py` to add more
+profiles or narrow either one's category list.
 
 ### "Explore a city" mode — beyond the charter's original v1 scope
 
@@ -37,6 +61,13 @@ it:**
   `PRELIM_WEIGHTS` in `scoring.py`. The UI labels this clearly. Once
   you've picked a promising candidate, use the **Score an address** tab
   with a real nearby address and its actual AADT to get the full score.
+- **The scan is resumable, on purpose.** Streamlit restarts its whole
+  script on any rerun-triggering event — a stray click, or even a brief
+  websocket reconnect on Render — which would otherwise throw away an
+  entire in-progress scan. The city scan processes one grid point per
+  script run and saves each result to session state immediately
+  (`city_scan.score_one_point`), so a rerun mid-scan only costs the one
+  point that was actively being scored, not the whole thing.
 - **The grid is deliberately small.** Each candidate point costs ~4 API
   calls (1 Census + 2 Geoapify Places + 1 Geoapify reverse-geocode, the
   last of which turns each grid point into a real nearby address you can

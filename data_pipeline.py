@@ -5,8 +5,9 @@ Pulls the raw signals the Fit Score needs:
   - Competitor locations from the Geoapify Places API
   - Complementary land-use ("generator") locations from the Geoapify Places API
 
-v1 scope: Indiana only, fast-casual restaurant tenant profile,
-fixed 1-mile competitor trade area / 0.5-mile complementary-use radius.
+v1 scope: Indiana only, two tenant profiles (fast-casual restaurant, small
+retail shop), fixed 1-mile competitor trade area / 0.5-mile
+complementary-use radius.
 
 Requires two free API keys, set as env vars:
   CENSUS_API_KEY   - https://api.census.gov/data/key_signup.html
@@ -42,6 +43,16 @@ INDIANA_MEDIAN_HOUSEHOLD_INCOME = 64322
 ACS_VARS = "B01003_001E,B19013_001E"
 
 METERS_PER_MILE = 1609.34
+
+# Competitor category definitions per tenant profile. Complementary
+# land-use ("generator") categories in find_complementary_generators()
+# below are shared across profiles on purpose — offices/schools/gyms/etc.
+# drive foot traffic relevant to either concept, not just restaurants.
+TENANT_PROFILES = {
+    "Fast-casual restaurant": ["catering.restaurant", "catering.fast_food"],
+    "Small retail shop": ["commercial"],
+}
+DEFAULT_TENANT_PROFILE = "Fast-casual restaurant"
 
 
 def get_acs_demand_data(geo: dict) -> dict:
@@ -122,13 +133,23 @@ def _geoapify_search(lat: float, lon: float, radius_m: int, categories: list) ->
     return points
 
 
-def find_competitors(lat: float, lon: float, radius_miles: float = 1.0) -> list:
+def find_competitors(lat: float, lon: float, radius_miles: float = 1.0,
+                      tenant_profile: str = None) -> list:
     """
-    Direct fast-casual-restaurant-type competitors within radius_miles.
-    v1 tenant profile only; broaden/parameterize categories per-vertical in v2.
+    Direct competitors within radius_miles, defined per tenant profile:
+      - "Fast-casual restaurant": catering.restaurant + catering.fast_food
+      - "Small retail shop": Geoapify's broad "commercial" category (~60
+        retail subcategories — clothing, convenience, electronics,
+        florist, food & drink specialists, etc.). v1 doesn't distinguish
+        retail sub-verticals (a bookstore vs. a clothing shop), so "any
+        nearby general retail shop" is the honest v1 approximation —
+        same level of generality as how the restaurant profile isn't
+        narrowed to "fast-casual specifically" either.
+    Defaults to Fast-casual restaurant if tenant_profile is unset/unknown.
     """
     radius_m = int(radius_miles * METERS_PER_MILE)
-    return _geoapify_search(lat, lon, radius_m, ["catering.restaurant", "catering.fast_food"])
+    categories = TENANT_PROFILES.get(tenant_profile, TENANT_PROFILES[DEFAULT_TENANT_PROFILE])
+    return _geoapify_search(lat, lon, radius_m, categories)
 
 
 def find_complementary_generators(lat: float, lon: float, radius_miles: float = 0.5) -> list:

@@ -74,11 +74,12 @@ def generate_grid(center_lat: float, center_lon: float,
     return points
 
 
-def score_one_point(lat: float, lon: float):
+def score_one_point(lat: float, lon: float, tenant_profile: str = None):
     """
-    Score a single candidate grid point. Returns a result dict, or None if
-    the point should be skipped (outside Indiana, or any lookup failed —
-    a bad point shouldn't sink the whole scan).
+    Score a single candidate grid point for the given tenant_profile (see
+    data_pipeline.TENANT_PROFILES). Returns a result dict, or None if the
+    point should be skipped (outside Indiana, or any lookup failed — a bad
+    point shouldn't sink the whole scan).
 
     Split out from what used to be one big scan_city() loop so the UI can
     call this one point at a time and save each result to st.session_state
@@ -93,7 +94,7 @@ def score_one_point(lat: float, lon: float):
             return None
 
         demand_data = get_acs_demand_data(geo)
-        competitors = find_competitors(lat, lon)
+        competitors = find_competitors(lat, lon, tenant_profile=tenant_profile)
         generators = find_complementary_generators(lat, lon)
         address = reverse_geocode(lat, lon)
 
