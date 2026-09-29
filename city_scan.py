@@ -10,11 +10,21 @@ IMPORTANT — what this is and isn't:
     parcels, vacant storefronts, or listings. v1 has no listings data
     source (CoStar was deferred). A grid point is only ever a rough area
     worth a closer look, not a confirmed available site.
-  - Every candidate point costs ~4 API calls (Census ACS + 2x Geoapify
-    Places + 1x Geoapify reverse geocode), so the grid is deliberately
-    small (see DEFAULT_RADIUS_MILES / DEFAULT_SPACING_MILES below) to keep
-    runtime and free-tier API usage reasonable. Widen it if you have
-    quota/time to spare.
+  - Points with no nearby commercial/dining/office activity at all are
+    rejected before scoring (see data_pipeline.has_nearby_commercial_activity).
+    Without this, an ordinary residential block can outscore a real
+    commercial corridor — it has plenty of nearby population (good
+    Demand) and zero restaurant competitors (maxes out Competition), even
+    though it's just a house. Expect the scan to return fewer than the
+    full candidate grid as a result — that's the filter working, not a bug.
+  - Every scored candidate point costs ~5 API calls (1 commercial-activity
+    check + Census ACS + 2x Geoapify Places + 1x Geoapify reverse geocode);
+    rejected residential points cost only 2 (the geography lookup + the
+    commercial-activity check), so actual usage per scan lands somewhere
+    between. The grid is deliberately small regardless (see
+    DEFAULT_RADIUS_MILES / DEFAULT_SPACING_MILES below) to keep runtime
+    and free-tier API usage reasonable. Widen it if you have quota/time
+    to spare.
 """
 
 import math
@@ -24,6 +34,7 @@ from data_pipeline import (
     get_acs_demand_data,
     find_competitors,
     find_complementary_generators,
+    has_nearby_commercial_activity,
     reverse_geocode,
     INDIANA_MEDIAN_HOUSEHOLD_INCOME,
 )
@@ -91,6 +102,13 @@ def score_one_point(lat: float, lon: float, tenant_profile: str = None):
     try:
         geo = geo_from_coordinates(lat, lon)
         if not is_indiana(geo):
+            return None
+
+        # Reject purely residential points before doing the more expensive
+        # lookups below — see has_nearby_commercial_activity's docstring
+        # for why this check exists (otherwise a house in a quiet
+        # subdivision can outscore a real commercial corridor).
+        if not has_nearby_commercial_activity(lat, lon):
             return None
 
         demand_data = get_acs_demand_data(geo)

@@ -152,6 +152,42 @@ def find_competitors(lat: float, lon: float, radius_miles: float = 1.0,
     return _geoapify_search(lat, lon, radius_m, categories)
 
 
+def has_nearby_commercial_activity(lat: float, lon: float, radius_miles: float = 0.15) -> bool:
+    """
+    Quick existence check: is there ANY commercial, dining, or office
+    activity within a short walk of this point?
+
+    Exists specifically to filter out purely residential city-scan grid
+    points before they get scored. Without this check, a grid point that
+    lands in the middle of an ordinary residential block can still score
+    *well*: it has plenty of nearby population (good Demand) and zero
+    restaurant competitors (maxes out Competition), even though it's
+    obviously not a viable commercial site — it's just a house. See
+    city_scan.score_one_point, which calls this before doing any of the
+    more expensive per-point lookups.
+
+    limit=1 on purpose — this only needs to know whether anything exists
+    nearby, not enumerate it, so it stays cheap.
+    """
+    radius_m = int(radius_miles * METERS_PER_MILE)
+    api_key = os.environ.get("GEOAPIFY_API_KEY")
+    if not api_key:
+        return True  # can't check without a key; don't block the scan over it
+
+    params = {
+        "categories": "commercial,catering,office",
+        "filter": f"circle:{lon},{lat},{radius_m}",
+        "limit": 1,
+        "apiKey": api_key,
+    }
+    try:
+        resp = requests.get(GEOAPIFY_PLACES_URL, params=params, headers=HEADERS, timeout=10)
+        resp.raise_for_status()
+        return len(resp.json().get("features", [])) > 0
+    except Exception:
+        return True  # fail open — a flaky check shouldn't reject a possibly-good point
+
+
 def find_complementary_generators(lat: float, lon: float, radius_miles: float = 0.5) -> list:
     """
     "Generator" uses within radius_miles that drive complementary foot

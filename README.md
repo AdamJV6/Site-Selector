@@ -53,6 +53,16 @@ it:**
   v1 has no access to actual available listings (CoStar was explicitly
   deferred in the charter). A high-ranked point means "this general area
   looks promising," not "this specific building is for lease."
+- **Residential points are filtered out before scoring.** Early testing
+  surfaced a real flaw: an ordinary house in a quiet subdivision could
+  outrank a real commercial corridor, because it has plenty of nearby
+  population (good Demand) and zero restaurant competitors (maxes out
+  Competition) — the formula had no notion of "is this even a commercial
+  area." `data_pipeline.has_nearby_commercial_activity()` now rejects any
+  grid point with no commercial/dining/office activity within a short
+  walk, before the more expensive per-point lookups run. Expect a scan to
+  return noticeably fewer candidates than the full sampled grid — that's
+  the filter working as intended, not a bug.
 - **The ranking is 3-factor, not 4-factor.** Traffic/Access is excluded
   because it's manual-AADT-entry-only in v1 (see charter) and can't
   reasonably be hand-entered for dozens of grid points at once. The three

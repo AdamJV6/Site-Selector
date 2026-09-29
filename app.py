@@ -187,7 +187,9 @@ def render_city_results(city_name: str, tenant_profile: str, candidates: list):
         "Preliminary ranking — Demand + Competition + Complementary Land Use only "
         "(Traffic/Access requires a manual AADT lookup per site; use the "
         "**Score an address** tab for the full 4-factor score once you've "
-        "picked a specific address near a top candidate)."
+        "picked a specific address near a top candidate). Purely residential "
+        "points with no nearby commercial activity are filtered out before "
+        "scoring, so this is usually fewer than the full sampled grid."
     )
     st.caption(
         "These are sampled grid points, not real listings — v1 has no data "
@@ -266,8 +268,10 @@ with tab_city:
 
     approx_points = int(3.14159 * (radius_miles / spacing_miles) ** 2)
     st.caption(
-        f"~{approx_points} candidate points, ~{approx_points * 4} API calls. "
-        "A wider radius or tighter spacing means a slower scan."
+        f"~{approx_points} candidate points sampled, ~3-5 API calls each "
+        "depending on how many turn out to be commercially viable "
+        "(residential points are filtered out cheaply, before the full "
+        "lookup). A wider radius or tighter spacing means a slower scan."
     )
 
     run_city = st.button("Scan this city", type="primary", key="scan_button")
