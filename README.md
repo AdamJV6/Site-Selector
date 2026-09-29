@@ -13,7 +13,7 @@ weighted composite Fit Score with map view.
 | Competitor count (1 mi) | Done — **via Geoapify Places API, not Google Places or Overpass** (see below) |
 | Complementary land use (0.5 mi) | Done — via Geoapify Places API |
 | Manual AADT entry | Done (number input, no DOT automation yet) |
-| Composite score + sub-score breakdown + tier label | Done |
+| Composite score + sub-score breakdown + tier label | Done — plus a plain-English "Detailed score breakdown" explaining the actual math behind each number (`scoring.explain_fit_score`) |
 | Map: site, competitors, complementary uses | Done (Folium) |
 | Indiana-only enforcement | Done (rejects non-IN block groups) |
 | **Two tenant profiles (beyond charter's v1 scope)** | Done — see below |

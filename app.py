@@ -23,7 +23,7 @@ from data_pipeline import (
     INDIANA_MEDIAN_HOUSEHOLD_INCOME,
     TENANT_PROFILES,
 )
-from scoring import compute_fit_score
+from scoring import compute_fit_score, explain_fit_score
 from city_scan import get_city_grid, score_one_point, INDIANA_CITIES, DEFAULT_RADIUS_MILES, DEFAULT_SPACING_MILES
 
 st.set_page_config(page_title="Site Selector — v1 (Indiana)", layout="wide")
@@ -131,6 +131,18 @@ def render_address_results(data: dict):
         st.progress(result.competition / 100, text=f"Competition: {result.competition}")
         st.progress(result.traffic / 100, text=f"Traffic/Access: {result.traffic}")
         st.progress(result.complementary / 100, text=f"Complementary Land Use: {result.complementary}")
+
+        with st.expander("Detailed score breakdown", expanded=True):
+            st.markdown(explain_fit_score(
+                population=demand_data["block_group_population"],
+                median_income=demand_data["median_household_income"],
+                state_median_income=INDIANA_MEDIAN_HOUSEHOLD_INCOME,
+                competitor_count=len(competitors),
+                aadt=data["aadt"],
+                generator_count=len(generators),
+                tenant_profile=data["tenant_profile"],
+                result=result,
+            ))
 
         with st.expander("Raw inputs"):
             st.write({

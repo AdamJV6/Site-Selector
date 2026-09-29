@@ -126,6 +126,88 @@ def compute_fit_score(
     )
 
 
+def explain_fit_score(
+    population: int,
+    median_income,
+    state_median_income: float,
+    competitor_count: int,
+    aadt: float,
+    generator_count: int,
+    tenant_profile: str,
+    result: FitScoreResult,
+) -> str:
+    """
+    Render a plain-English, numbers-included walkthrough of how each
+    sub-score and the composite were actually calculated for one scored
+    site — meant to be read by a person (grader, teammate, the business
+    owner) alongside the score card, not just the bare numbers. Lives
+    next to the formula itself on purpose, so the explanation can't drift
+    out of sync with the math it's describing.
+    """
+    lines = []
+
+    # --- Demand ---
+    pop_pct = round((population / DEMAND_POP_BENCHMARK) * 100)
+    demand_text = (
+        f"**Demand — {result.demand}/100 (30% of composite).** "
+        f"This block group has an estimated population of {population:,} "
+        f"(U.S. Census ACS 5-year estimate) against a benchmark of "
+        f"{DEMAND_POP_BENCHMARK:,} for a full population score — "
+        f"{pop_pct}% of that benchmark."
+    )
+    if median_income is not None:
+        income_pct = round((median_income / state_median_income) * 100)
+        demand_text += (
+            f" Median household income here is ${median_income:,}, which is "
+            f"{income_pct}% of the Indiana state median (${state_median_income:,.0f}). "
+            f"Demand blends these {int(DEMAND_POP_WEIGHT * 100)}% population / "
+            f"{int(DEMAND_INCOME_WEIGHT * 100)}% income."
+        )
+    else:
+        demand_text += (
+            " Income data was suppressed at the block-group level (common in low-population "
+            "areas, per Census privacy rules), so this score uses population only."
+        )
+    lines.append(demand_text)
+
+    # --- Competition ---
+    lines.append(
+        f"**Competition — {result.competition}/100 (25% of composite).** "
+        f"{competitor_count} direct {tenant_profile.lower()} competitor"
+        f"{'' if competitor_count == 1 else 's'} found within 1 mile. The score decays "
+        f"exponentially — halving every {COMPETITION_HALF_LIFE} competitors — rather than "
+        f"hitting a hard floor, so it keeps distinguishing \"somewhat saturated\" from "
+        f"\"extremely saturated\" markets instead of calling them both a flat 0."
+    )
+
+    # --- Traffic ---
+    aadt_pct = round((aadt / TRAFFIC_AADT_BENCHMARK) * 100) if aadt else 0
+    lines.append(
+        f"**Traffic/Access — {result.traffic}/100 (25% of composite).** "
+        f"Based on the manually entered AADT (Annual Average Daily Traffic) of "
+        f"{int(aadt):,} vehicles/day for the nearest DOT count station, against a "
+        f"benchmark of {TRAFFIC_AADT_BENCHMARK:,} AADT for a full score — "
+        f"{aadt_pct}% of that benchmark."
+    )
+
+    # --- Complementary ---
+    lines.append(
+        f"**Complementary Land Use — {result.complementary}/100 (20% of composite).** "
+        f"{generator_count} nearby generator{'' if generator_count == 1 else 's'} "
+        f"(offices, schools, universities, hospitals, supermarkets, malls, or fitness "
+        f"centers) found within 0.5 miles, worth {GENERATOR_POINTS_PER_SITE} points each."
+    )
+
+    # --- Composite ---
+    lines.append(
+        f"**Composite:** (0.30 × {result.demand}) + (0.25 × {result.competition}) + "
+        f"(0.25 × {result.traffic}) + (0.20 × {result.complementary}) = "
+        f"**{result.composite}/100 — {result.tier}.**"
+    )
+
+    return "\n\n".join(lines)
+
+
 # --- Preliminary (3-factor) scoring for the city-wide scan ---
 # The city scan generates many candidate points automatically and can't
 # ask a human to look up AADT for each one (Traffic/Access is manual-entry
